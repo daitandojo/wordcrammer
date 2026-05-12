@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model tblCrammers {
+  username        String    @id @db.VarChar(6)
+  firstname       String    @db.VarChar(255)
+  alterego        String    @db.VarChar(255)
+  password        String?   @db.VarChar(255)
+  emailaddress    String?   @db.VarChar(255) @unique
+  mobile          String?   @db.VarChar(255)
+  topiccode       String?   @db.VarChar(6)
+  attempts        String?   @db.VarChar(255)
+  corrects        String?   @db.VarChar(255)
+  score           String?   @db.VarChar(255)
+  streak          Int?
+  lastdate        String?   @db.VarChar(12)
+  xp              Int?      @default(0)
+  level           Int?      @default(1)
+  sourceLanguage  String?   @default("en") @db.VarChar(10)
+  targetLanguage  String?   @default("es") @db.VarChar(10)
+  ttsVoice        String?   @db.VarChar(50)
+  streakFreeze    Int?      @default(0)
+  goal            String?   @db.VarChar(20)
+  referralCode    String?   @unique @db.VarChar(10)
+  referredBy      String?   @db.VarChar(10)
+
+  @@map("tblCrammers")
+}
+
+model tblTopics {
+  topiccode   String   @id @db.VarChar(6)
+  topictitle  String?  @db.VarChar(30)
+  setimage    String?  @db.VarChar(255)
+  voice       String?  @db.VarChar(255)
+  description String?  @db.VarChar(255)
+
+  @@map("tblTopics")
+}
+
+model tblContent {
+  id            Int      @id @default(autoincrement())
+  topiccode     String?  @db.VarChar(6)
+  questiontype  String?  @db.VarChar(50)
+  question      String?  @db.VarChar(18)
+  answer        String?  @db.VarChar(18)
+  reported      String?  @db.VarChar(1)
+  topic_tag     String?  @db.VarChar(50)
+  grammar_tag   String?  @db.VarChar(50)
+
+  @@map("tblContent")
+}
+
+model tblPushSubscriptions {
+  id             Int      @id @default(autoincrement())
+  username       String   @db.VarChar(6)
+  endpoint       String   @db.VarChar(500)
+  p256dh         String   @db.VarChar(255)
+  auth           String   @db.VarChar(255)
+  createdAt      DateTime @default(now())
+
+  @@unique([username, endpoint])
+  @@map("tblPushSubscriptions")
+}
+
+model tblChallenges {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  type      String   @db.VarChar(20)
+  startDate DateTime
+  endDate   DateTime
+  reward    Int      @default(0)
+
+  @@map("tblChallenges")
+}
+
+model tblProgress {
+  id        Int      @id @default(autoincrement())
+  username  String?  @db.VarChar(6)
+  topiccode String?  @db.VarChar(6)
+  question  String?  @db.VarChar(18)
+  attempts  String?  @db.VarChar(255)
+  corrects  String?  @db.VarChar(255)
+  lastDate  String?  @db.VarChar(12)
+
+  @@map("tblProgress")
+}
+
+model tblSessions {
+  id        Int      @id @default(autoincrement())
+  username  String   @db.VarChar(6)
+  topiccode String?  @db.VarChar(6)
+  topictitle String? @db.VarChar(60)
+  score     Int      @default(0)
+  totalItems Int     @default(0)
+  xpEarned  Int      @default(0)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("tblSessions")
+}

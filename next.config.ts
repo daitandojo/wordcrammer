@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "@google-cloud/speech",
+    "@google-cloud/text-to-speech",
+  ],
 };
 
 export default nextConfig;
