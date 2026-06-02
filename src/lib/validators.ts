@@ -1,8 +1,8 @@
 import { z } from 'zod'
 
 export const progressSchema = z.object({
-  topiccode: z.string().length(6),
-  question: z.string().max(18),
+  topiccode: z.string().length(5).max(6),
+  question: z.string().min(1).max(200),
   correct: z.boolean(),
 })
 

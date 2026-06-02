@@ -5,14 +5,13 @@ import AuthSessionProvider from '@/components/session-provider'
 import { ToastProvider } from '@/components/toast'
 import { SoundProvider } from '@/components/sound-provider'
 import { UserProvider } from '@/components/user-provider'
-import Navbar from '@/components/navbar'
-import Sidebar from '@/components/sidebar'
 import Footer from '@/components/footer'
 import { PageTransition } from '@/components/page-transition'
 import MobileBottomNav from '@/components/mobile-bottom-nav'
 import InstallPrompt from '@/components/install-prompt'
 import ErrorBoundary from '@/components/error-boundary'
 import OfflineBanner from '@/components/offline-banner'
+import SwRegister from '@/components/sw-register'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -67,37 +66,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="h-dvh overflow-hidden">
         <AuthSessionProvider>
           <UserProvider>
-          <SoundProvider>
-          <ToastProvider>
-            <div className="flex h-dvh overflow-hidden">
-              <Sidebar />
-              <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-                <Navbar />
-                <OfflineBanner />
-                <main className="flex-1 overflow-y-auto pb-16 md:pb-0 pt-14 lg:pt-0">
-                  <ErrorBoundary>
-                    <PageTransition>{children}</PageTransition>
-                  </ErrorBoundary>
-                </main>
-                <Footer />
-              </div>
-            </div>
-            <MobileBottomNav />
-            <InstallPrompt />
-          </ToastProvider>
-          </SoundProvider>
+            <SoundProvider>
+              <ToastProvider>
+                <div className="h-dvh overflow-hidden">
+                  <OfflineBanner />
+                  <main className="h-dvh overflow-y-auto pb-16 md:pb-0">
+                    <ErrorBoundary>
+                      <PageTransition>{children}</PageTransition>
+                    </ErrorBoundary>
+                  </main>
+                  <Footer />
+                </div>
+                <MobileBottomNav />
+                <InstallPrompt />
+              </ToastProvider>
+            </SoundProvider>
           </UserProvider>
         </AuthSessionProvider>
 
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
-                navigator.serviceWorker.register('/sw.js').catch(function() {});
-              }
-            `,
-          }}
-        />
+        <SwRegister />
       </body>
     </html>
   )

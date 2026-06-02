@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
-import { Settings, LogOut, ChevronRight, Globe, Target, Bell, Volume2, Trash2, Loader2 } from 'lucide-react'
+import { Globe, Bell, Volume2, Trash2, Loader2, Star, X } from 'lucide-react'
+import { useToast } from '@/components/toast'
 
 const languages = [
   { code: 'es', name: 'Spanish', flag: '🇪🇸' }, { code: 'fr', name: 'French', flag: '🇫🇷' },
@@ -18,111 +18,334 @@ const languages = [
   { code: 'id', name: 'Indonesian', flag: '🇮🇩' }, { code: 'uk', name: 'Ukrainian', flag: '🇺🇦' },
 ]
 
+const publicVapidKey = 'BMrkFdQpAbYqKPXt7JTqG6eFNXiCJq3GRD2As2F1J4sWxVTqHdYBJCXFnKpPq7TqVq3YqXpAbKqPXt7JTqG6eFNX'
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i)
+  return outputArray
+}
+
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      style={{
+        width: 44,
+        height: 26,
+        borderRadius: 9999,
+        background: on ? 'rgba(31,200,90,0.8)' : 'rgba(255,255,255,0.08)',
+        border: 'none',
+        cursor: 'pointer',
+        position: 'relative',
+        transition: 'background 0.2s ease',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: on ? 21 : 3,
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          background: 'white',
+          transition: 'left 0.2s ease',
+        }}
+      />
+    </button>
+  )
+}
+
 export default function SettingsPage() {
-  const router = useRouter()
   const { data: session } = useSession()
+  const toast = useToast()
   const [language, setLanguage] = useState('es')
-  const [dailyGoal, setDailyGoal] = useState('1')
   const [soundOn, setSoundOn] = useState(true)
-  const [notifications, setNotifications] = useState(true)
+  const [notifications, setNotifications] = useState(false)
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default')
   const [loading, setLoading] = useState(true)
+  const [ratingOpen, setRatingOpen] = useState(false)
+  const [rating, setRating] = useState(0)
+  const [ratingSubmitted, setRatingSubmitted] = useState(false)
 
   useEffect(() => {
     fetch('/api/users/me').then((r) => r.json()).then((data) => {
       if (data.targetLanguage) setLanguage(data.targetLanguage)
       setLoading(false)
     }).catch(() => setLoading(false))
+    if ('Notification' in window) setNotifPermission(Notification.permission)
   }, [])
+
+  const handleNotifToggle = async (on: boolean) => {
+    if (on) {
+      if (!('Notification' in window)) {
+        toast.show('error', 'Notifications not supported')
+        return
+      }
+      if (Notification.permission === 'denied') {
+        toast.show('error', 'Notifications blocked in browser settings')
+        return
+      }
+      if (Notification.permission === 'default') {
+        const perm = await Notification.requestPermission()
+        setNotifPermission(perm)
+        if (perm !== 'granted') return
+      }
+      try {
+        const sw = await navigator.serviceWorker.ready
+        const sub = await sw.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicVapidKey),
+        })
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        })
+        setNotifications(true)
+        toast.show('xp', 'Reminders enabled')
+      } catch { toast.show('error', 'Failed to enable') }
+    } else {
+      try {
+        await fetch('/api/push/unsubscribe', { method: 'POST' })
+        setNotifications(false)
+      } catch {}
+    }
+  }
+
+  const handleRating = (stars: number) => {
+    setRating(stars)
+    if (stars >= 4) {
+      window.open('https://chromewebstore.google.com', '_blank')
+    }
+    setRatingSubmitted(true)
+    setTimeout(() => setRatingOpen(false), 2000)
+  }
 
   const handleDelete = async () => {
     if (!confirm('Delete your account and all progress? This cannot be undone.')) return
-    if (!confirm('Are you sure? All your XP, streaks, and progress will be permanently deleted.')) return
+    if (!confirm('Are you sure? All XP, streaks, and progress will be permanently deleted.')) return
     try {
       await fetch(`/api/users/${session?.user?.name}`, { method: 'DELETE' })
       signOut()
-    } catch (e) { console.error('[Failed to delete account]', e) }
+    } catch (e) { console.error('[Failed to delete]', e) }
   }
 
+  const notifStatus = (() => {
+    if (notifPermission === 'denied') return 'Blocked'
+    if (notifications) return 'On'
+    return 'Off'
+  })()
+
   if (loading) {
-    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 text-blue-400 animate-spin" /></div>
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <Loader2 style={{ width: 20, height: 20, color: 'rgba(148,163,184,0.2)', animation: 'spin 1s linear infinite' }} />
+      </div>
+    )
   }
 
   return (
-    <div className="app-main p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto w-full">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 mb-4">
-          <Settings className="w-6 h-6" />
+    <div style={{ minHeight: '100%', background: '#050a14' }}>
+      <div style={{ padding: '48px 40px', maxWidth: '560px', margin: '0 auto', width: '100%' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '48px' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'white', letterSpacing: '-0.01em', marginBottom: '4px' }}>
+            Settings
+          </h1>
+          <p style={{ fontSize: '14px', color: 'rgba(148,163,184,0.45)' }}>
+            Customize your experience
+          </p>
         </div>
-        <h1 className="text-2xl font-bold text-white mb-1">Settings</h1>
-        <p className="text-sm text-slate-500">Customize your learning experience</p>
-      </div>
 
-      <div className="space-y-4">
-        <div className="glass rounded-2xl p-5 border border-white/10">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Learning</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Globe className="w-4 h-4 text-blue-400" />
-                <div><p className="text-sm text-white">Target Language</p></div>
-              </div>
-              <select value={language} onChange={(e) => setLanguage(e.target.value)}
-                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-                {languages.map((l) => (<option key={l.code} value={l.code}>{l.flag} {l.name}</option>))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Language */}
+          <div style={{ padding: '20px 24px', borderRadius: '16px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(148,163,184,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '16px' }}>
+              Language
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Globe style={{ width: 16, height: 16, color: 'rgba(59,130,246,0.6)', flexShrink: 0 }} />
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(226,232,240,0.8)',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                {languages.map((l) => (
+                  <option key={l.code} value={l.code} style={{ background: '#0a0f1a' }}>
+                    {l.flag} {l.name}
+                  </option>
+                ))}
               </select>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Target className="w-4 h-4 text-indigo-400" />
-                <div><p className="text-sm text-white">Daily Goal</p><p className="text-xs text-slate-500">Sets per day</p></div>
-              </div>
-              <select value={dailyGoal} onChange={(e) => setDailyGoal(e.target.value)}
-                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-                <option value="1">1 set</option><option value="2">2 sets</option><option value="3">3 sets</option><option value="99">No limit</option>
-              </select>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, color: 'rgba(148,163,184,0.2)' }}>
+                <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
           </div>
-        </div>
 
-        <div className="glass rounded-2xl p-5 border border-white/10">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Preferences</h3>
-          <div className="space-y-4">
-            <label className="flex items-center justify-between cursor-pointer">
-              <div className="flex items-center gap-3">
-                <Volume2 className="w-4 h-4 text-green-400" />
-                <div><p className="text-sm text-white">Sound Effects</p></div>
+          {/* Notifications */}
+          <div style={{ padding: '20px 24px', borderRadius: '16px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(148,163,184,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '16px' }}>
+              Notifications
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Bell style={{ width: 16, height: 16, color: 'rgba(234,179,8,0.5)', flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: '14px', fontWeight: 500, color: 'rgba(226,232,240,0.8)' }}>Daily reminders</p>
+                  {notifPermission === 'denied' && (
+                    <p style={{ fontSize: '11px', color: 'rgba(239,68,68,0.5)' }}>Blocked — allow in browser settings</p>
+                  )}
+                </div>
               </div>
-              <div onClick={() => setSoundOn(!soundOn)} className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${soundOn ? 'bg-blue-500' : 'bg-white/10'}`}>
-                <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${soundOn ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              <Toggle on={notifications && notifPermission === 'granted'} onChange={handleNotifToggle} />
+            </div>
+          </div>
+
+          {/* Sound */}
+          <div style={{ padding: '20px 24px', borderRadius: '16px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(148,163,184,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '16px' }}>
+              Sound
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Volume2 style={{ width: 16, height: 16, color: 'rgba(31,200,90,0.5)', flexShrink: 0 }} />
+                <p style={{ fontSize: '14px', fontWeight: 500, color: 'rgba(226,232,240,0.8)' }}>Sound effects</p>
               </div>
-            </label>
-            <label className="flex items-center justify-between cursor-pointer">
-              <div className="flex items-center gap-3">
-                <Bell className="w-4 h-4 text-yellow-400" />
-                <div><p className="text-sm text-white">Daily Reminders</p><p className="text-xs text-slate-500">Push notification if you miss a day</p></div>
+              <Toggle on={soundOn} onChange={setSoundOn} />
+            </div>
+          </div>
+
+          {/* Rate */}
+          <div style={{ padding: '20px 24px', borderRadius: '16px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(148,163,184,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '16px' }}>
+              Feedback
+            </p>
+            <button
+              onClick={() => setRatingOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Star style={{ width: 16, height: 16, color: 'rgba(234,179,8,0.5)', flexShrink: 0 }} />
+                <p style={{ fontSize: '14px', fontWeight: 500, color: 'rgba(226,232,240,0.8)' }}>Rate WordCrammer</p>
               </div>
-              <div onClick={() => setNotifications(!notifications)} className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${notifications ? 'bg-blue-500' : 'bg-white/10'}`}>
-                <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${notifications ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: 'rgba(148,163,184,0.2)' }}>
+                <path d="M4 2.5L7.5 6l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Rating modal */}
+          {ratingOpen && (
+            <div style={{ padding: '24px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <p style={{ fontSize: '15px', fontWeight: 600, color: 'white' }}>How's WordCrammer?</p>
+                <button onClick={() => setRatingOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(148,163,184,0.3)', display: 'flex' }}>
+                  <X style={{ width: 16, height: 16 }} />
+                </button>
               </div>
-            </label>
+              {!ratingSubmitted ? (
+                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button key={s} onClick={() => handleRating(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                      <Star
+                        style={{
+                          width: 28,
+                          height: 28,
+                          color: s <= rating ? '#eab308' : 'rgba(148,163,184,0.15)',
+                          fill: s <= rating ? '#eab308' : 'none',
+                          transition: 'all 0.1s ease',
+                        }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: '13px', color: 'rgba(74,222,128,0.7)', textAlign: 'center' }}>
+                  {rating >= 4 ? 'Thanks! Opening store page...' : 'Thanks for your feedback!'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Sign out */}
+          <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
+            <button
+              onClick={() => signOut()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: 'rgba(148,163,184,0.25)',
+                transition: 'color 0.15s ease',
+                padding: '8px',
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+
+          {/* Danger zone */}
+          <div style={{ marginTop: '24px', padding: '20px 24px', borderRadius: '16px', background: 'rgba(239,68,68,0.02)', border: '1px solid rgba(239,68,68,0.08)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(239,68,68,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>
+              Danger Zone
+            </p>
+            <button
+              onClick={handleDelete}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: 'rgba(239,68,68,0.04)',
+                border: '1px solid rgba(239,68,68,0.1)',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: 'rgba(239,68,68,0.5)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Trash2 style={{ width: 14, height: 14 }} />
+              Delete account
+            </button>
           </div>
         </div>
-
-        <div className="glass rounded-2xl p-5 border border-red-500/10">
-          <h3 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-4">Danger Zone</h3>
-          <button onClick={handleDelete} className="flex items-center gap-2 w-full px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors text-sm">
-            <Trash2 className="w-4 h-4" />
-            Delete Account and All Data
-          </button>
-        </div>
-
-        <div className="text-center pt-2">
-          <button onClick={() => signOut()} className="inline-flex items-center gap-2 px-4 py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-            <LogOut className="w-3.5 h-3.5" />
-            Sign Out
-          </button>
-        </div>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }

@@ -1,32 +1,41 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
-import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUser } from '@/components/user-provider'
+import QuestDrawer from '@/components/quest-drawer'
 import {
   LayoutDashboard, BarChart3, Settings,
-  Keyboard, ChevronLeft,
-  LogOut, Sparkles, FileText,
+  Keyboard, ChevronLeft, ChevronRight,
+  LogOut, FileText, BookOpen,
+  Crosshair, Share2, Shield,
+  Pin, PinOff,
 } from 'lucide-react'
 import { calculateLevel, LEVEL_THRESHOLDS } from '@/lib/game-config'
 
+const ADMIN_EMAIL = 'reconozco@gmail.com'
+
 const mainNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/sets', label: 'Topics', icon: Sparkles },
   { href: '/analysis', label: 'Progress', icon: BarChart3 },
 ]
 
 const moreNav = [
+  { href: '/social', label: 'Social', icon: Share2 },
   { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/blog', label: 'Blog', icon: FileText },
 ]
 
 const practiceModes = [
   { href: '/cram', label: 'Flashcards', icon: Keyboard },
+  { href: '/sets', label: 'Curriculum', icon: BookOpen },
+]
+
+const adminNav = [
+  { href: '/admin', label: 'Admin', icon: Shield },
 ]
 
 function SectionLabel({ label }: { label: string }) {
@@ -101,7 +110,19 @@ function NavLink({
 export default function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const [pinned, setPinned] = useState(false)
+  const [questsOpen, setQuestsOpen] = useState(false)
   const { user: userStats } = useUser()
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const isAdmin = userStats?.email === ADMIN_EMAIL
+
+  const sidebarWidth = collapsed ? 72 : 240
+
+  const dispatchSidebar = useCallback((w: number) => {
+    window.dispatchEvent(new CustomEvent('sidebar-change', { detail: { width: w } }))
+  }, [])
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -116,168 +137,360 @@ export default function Sidebar() {
     return Math.min(Math.max(((userStats.xp - cur) / (next - cur)) * 100, 0), 100)
   })()
 
+  const showSidebar = useCallback(() => {
+    setVisible(true)
+    if (hideTimer.current) clearTimeout(hideTimer.current)
+  }, [])
+
+  const hideSidebar = useCallback(() => {
+    if (pinned) return
+    hideTimer.current = setTimeout(() => setVisible(false), 300)
+  }, [pinned])
+
+  const togglePin = useCallback(() => {
+    setPinned((p) => {
+      const next = !p
+      if (next) {
+        setVisible(true)
+        if (hideTimer.current) clearTimeout(hideTimer.current)
+      }
+      try {
+        localStorage.setItem('sidebar_pinned', String(next))
+      } catch {}
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar_pinned')
+    if (saved === 'true') {
+      setPinned(true)
+      setVisible(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (pinned) return
+    const onMouseMove = (e: MouseEvent) => {
+      if (e.clientX <= 60) {
+        showSidebar()
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    return () => window.removeEventListener('mousemove', onMouseMove)
+  }, [pinned, showSidebar])
+
+  useEffect(() => {
+    dispatchSidebar(sidebarWidth)
+  }, [sidebarWidth, dispatchSidebar])
+
+  const isVisible = visible || pinned
+
   return (
-    <aside
-      className="hidden lg:flex flex-col h-dvh transition-all duration-300"
-      style={{
-        width: collapsed ? '72px' : '240px',
-        background: 'rgba(5,10,20,0.95)',
-        backdropFilter: 'blur(28px)',
-        borderRight: '1px solid rgba(255,255,255,0.03)',
-      }}
-    >
-      {/* Logo */}
-      <div
-        className="flex items-center shrink-0"
-        style={{
-          height: '64px',
-          padding: '0 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.03)',
-        }}
-      >
-        <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0">
-          <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 transition-transform duration-200 group-hover:scale-105"
+    <>
+      <AnimatePresence>
+        {isVisible && (
+          <motion.aside
+            ref={sidebarRef}
+            initial={{ x: -260, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -260, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            onMouseEnter={() => {
+              if (hideTimer.current) clearTimeout(hideTimer.current)
+            }}
+            onMouseLeave={hideSidebar}
+            className="hidden lg:flex flex-col h-full z-40"
             style={{
-              background: 'linear-gradient(135deg, #1fc85a, #16b84a)',
-              boxShadow: '0 4px 12px rgba(31,200,90,0.25)',
+              width: sidebarWidth,
+              background: 'rgba(5,10,20,0.98)',
+              backdropFilter: 'blur(28px)',
+              borderRight: '1px solid rgba(255,255,255,0.03)',
+              transition: 'width 0.22s cubic-bezier(0.22,1,0.36,1), opacity 0.22s ease',
+              overflow: 'hidden',
+              flexShrink: 0,
+              opacity: isVisible ? 1 : 0,
+              pointerEvents: isVisible ? 'auto' : 'none',
             }}
           >
-            W
-          </div>
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-sm font-semibold text-white whitespace-nowrap overflow-hidden"
-              >
-                WordCrammer
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </Link>
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="ml-auto p-1.5 rounded-lg transition-all duration-200 shrink-0"
-          style={{ color: 'rgba(148,163,184,0.3)' }}
-          aria-label={collapsed ? 'Expand' : 'Collapse'}
-        >
-          <ChevronLeft
-            className="w-4 h-4 transition-transform duration-300"
-            style={{ transform: collapsed ? 'rotate(180deg)' : 'none' }}
-          />
-        </button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 py-6 px-4 overflow-y-auto space-y-7">
-        {/* Main section */}
-        <div>
-          <SectionLabel label="Main" />
-          <div className="space-y-1">
-            {mainNav.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                collapsed={collapsed}
-                active={isActive(item.href)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Practice section */}
-        <div>
-          <SectionLabel label="Practice" />
-          <div className="space-y-1">
-            {practiceModes.map((mode) => (
-              <NavLink
-                key={mode.href}
-                href={mode.href}
-                icon={mode.icon}
-                label={mode.label}
-                collapsed={collapsed}
-                active={isActive(mode.href)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* More section */}
-        <div>
-          <SectionLabel label="More" />
-          <div className="space-y-1">
-            {moreNav.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                collapsed={collapsed}
-                active={isActive(item.href)}
-              />
-            ))}
-          </div>
-        </div>
-      </nav>
-
-      {/* Bottom area */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)', padding: '16px 12px' }}>
-        <div>
-          {!collapsed && userStats && (
-            <div style={{ marginBottom: '12px' }}>
-              <div className="flex items-center gap-3">
+            {/* Logo */}
+            <div
+              className="flex items-center shrink-0"
+              style={{
+                height: '64px',
+                padding: '0 16px',
+                borderBottom: '1px solid rgba(255,255,255,0.03)',
+              }}
+            >
+              <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0">
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #1fc85a, #16b84a)' }}
-                >
-                  {(userStats.firstname || userStats.username || 'U')[0].toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
-                    {userStats.firstname || userStats.username || 'User'}
-                  </p>
-                  <p className="text-[11px]" style={{ color: 'rgba(148,163,184,0.35)' }}>
-                    Lv.{userStats.level}
-                  </p>
-                </div>
-              </div>
-              <div style={{ marginTop: '10px', height: '2px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px', overflow: 'hidden' }}>
-                <motion.div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 transition-transform duration-200 group-hover:scale-105"
                   style={{
-                    height: '100%',
-                    borderRadius: '9999px',
-                    background: 'linear-gradient(90deg, #1fc85a, #4ade80)',
-                    width: `${xpPercent}%`,
+                    background: 'linear-gradient(135deg, #1fc85a, #16b84a)',
+                    boxShadow: '0 4px 12px rgba(31,200,90,0.25)',
                   }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${xpPercent}%` }}
-                  transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                />
-              </div>
-              <p className="text-[10px] mt-1.5" style={{ color: 'rgba(148,163,184,0.25)' }}>
-                {userStats.xp.toLocaleString()} XP
-              </p>
+                >
+                  W
+                </div>
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="text-sm font-semibold text-white whitespace-nowrap overflow-hidden"
+                    >
+                      WordCrammer
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
             </div>
-          )}
-          <button
-            onClick={() => signOut()}
-            className="flex items-center w-full"
-            style={{
-              padding: '9px 12px',
-              borderRadius: '10px',
-              color: 'rgba(148,163,184,0.25)',
-              fontSize: '13px',
-              gap: '14px',
-              transition: 'color 0.15s ease',
-            }}
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            {!collapsed && <span>Sign out</span>}
-          </button>
-        </div>
-      </div>
-    </aside>
+
+            {/* Navigation */}
+            <nav className="flex-1 py-6 px-4 overflow-y-auto space-y-7">
+              {/* Main section */}
+              <div>
+                <SectionLabel label="Main" />
+                <div className="space-y-1">
+                  {mainNav.map((item) => (
+                    <NavLink
+                      key={item.href}
+                      {...item}
+                      collapsed={collapsed}
+                      active={isActive(item.href)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Practice section */}
+              <div>
+                <SectionLabel label="Practice" />
+                <div className="space-y-1">
+                  {practiceModes.map((mode) => (
+                    <NavLink
+                      key={mode.href}
+                      href={mode.href}
+                      icon={mode.icon}
+                      label={mode.label}
+                      collapsed={collapsed}
+                      active={isActive(mode.href)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Quests section */}
+              <div>
+                <SectionLabel label="Engage" />
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setQuestsOpen(true)}
+                    className="group flex items-center w-full"
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: '10px',
+                      color: questsOpen ? '#4ade80' : 'rgba(226,232,240,0.6)',
+                      gap: '14px',
+                      transition: 'all 0.15s ease',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <Crosshair
+                      className="shrink-0 transition-transform duration-200 group-hover:scale-110"
+                      style={{ width: 17, height: 17 }}
+                    />
+                    <AnimatePresence>
+                      {!collapsed && (
+                        <motion.span
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -8 }}
+                          transition={{ duration: 0.12 }}
+                          className="text-sm font-medium"
+                          style={{ color: questsOpen ? '#4ade80' : 'rgba(226,232,240,0.7)' }}
+                        >
+                          Quests
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </button>
+                </div>
+              </div>
+
+              {/* Admin section */}
+              {isAdmin && (
+                <div>
+                  <SectionLabel label="Admin" />
+                  <div className="space-y-1">
+                    {adminNav.map((item) => (
+                      <NavLink
+                        key={item.href}
+                        {...item}
+                        collapsed={collapsed}
+                        active={isActive(item.href)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* More section */}
+              <div>
+                <SectionLabel label="More" />
+                <div className="space-y-1">
+                  {moreNav.map((item) => (
+                    <NavLink
+                      key={item.href}
+                      {...item}
+                      collapsed={collapsed}
+                      active={isActive(item.href)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </nav>
+
+            {/* Bottom area */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)', padding: '12px' }}>
+              {/* Pin button */}
+              <button
+                onClick={togglePin}
+                className="flex items-center w-full mb-2"
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '10px',
+                  color: pinned ? '#4ade80' : 'rgba(148,163,184,0.3)',
+                  fontSize: '13px',
+                  gap: '14px',
+                  transition: 'color 0.15s ease',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+                title={pinned ? 'Unpin sidebar' : 'Pin sidebar'}
+              >
+                {pinned ? (
+                  <PinOff className="w-4 h-4 shrink-0" />
+                ) : (
+                  <Pin className="w-4 h-4 shrink-0" />
+                )}
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -8 }}
+                      transition={{ duration: 0.12 }}
+                      className="text-sm"
+                    >
+                      {pinned ? 'Unpin' : 'Pin sidebar'}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
+
+              {/* Collapse toggle */}
+              <button
+                onClick={() => setCollapsed(!collapsed)}
+                className="flex items-center w-full mb-2"
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '10px',
+                  color: 'rgba(148,163,184,0.3)',
+                  fontSize: '13px',
+                  gap: '14px',
+                  transition: 'color 0.15s ease',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                {collapsed ? (
+                  <ChevronRight className="w-4 h-4 shrink-0 transition-transform duration-300" />
+                ) : (
+                  <ChevronLeft className="w-4 h-4 shrink-0 transition-transform duration-300" />
+                )}
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -8 }}
+                      transition={{ duration: 0.12 }}
+                      className="text-sm"
+                    >
+                      Collapse
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
+
+              <div>
+                {!collapsed && userStats && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                        style={{ background: 'linear-gradient(135deg, #1fc85a, #16b84a)' }}
+                      >
+                        {(userStats.firstname || userStats.username || 'U')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {userStats.firstname || userStats.username || 'User'}
+                        </p>
+                        <p className="text-[11px]" style={{ color: 'rgba(148,163,184,0.35)' }}>
+                          Lv.{userStats.level}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '10px', height: '2px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px', overflow: 'hidden' }}>
+                      <motion.div
+                        style={{
+                          height: '100%',
+                          borderRadius: '9999px',
+                          background: 'linear-gradient(90deg, #1fc85a, #4ade80)',
+                          width: `${xpPercent}%`,
+                        }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${xpPercent}%` }}
+                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                      />
+                    </div>
+                    <p className="text-[10px] mt-1.5" style={{ color: 'rgba(148,163,184,0.25)' }}>
+                      {userStats.xp.toLocaleString()} XP
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={() => signOut()}
+                  className="flex items-center w-full"
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: '10px',
+                    color: 'rgba(148,163,184,0.25)',
+                    fontSize: '13px',
+                    gap: '14px',
+                    transition: 'color 0.15s ease',
+                  }}
+                >
+                  <LogOut className="w-4 h-4 shrink-0" />
+                  {!collapsed && <span>Sign out</span>}
+                </button>
+              </div>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+      <QuestDrawer open={questsOpen} onClose={() => setQuestsOpen(false)} />
+    </>
   )
 }

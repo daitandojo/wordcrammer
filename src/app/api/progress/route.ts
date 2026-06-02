@@ -38,7 +38,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json()
+    let body = {}
+    const ct = request.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      const raw = await request.text()
+      if (raw) body = JSON.parse(raw)
+    }
     const parsed = progressSchema.parse(body)
     const { topiccode, question, correct } = parsed
     const username = session.user.name!

@@ -78,13 +78,28 @@ model tblCrammers {
 }
 
 model tblTopics {
-  topiccode   String   @id @db.VarChar(6)
-  topictitle  String?  @db.VarChar(30)
-  setimage    String?  @db.VarChar(255)
-  voice       String?  @db.VarChar(255)
-  description String?  @db.VarChar(255)
+  topiccode    String   @id @db.VarChar(6)
+  topictitle   String?  @db.VarChar(30)
+  setimage     String?  @db.VarChar(255)
+  voice        String?  @db.VarChar(255)
+  description  String?  @db.VarChar(255)
+  createdBy    String?  @db.VarChar(6)
+  sortOrder    Int?     @default(0)
+  projectSetId Int?
+  projectSet   tblProjectSets? @relation(fields: [projectSetId], references: [id])
 
   @@map("tblTopics")
+}
+
+model tblProjectSets {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(60)
+  language  String   @db.VarChar(6)
+  createdBy String?  @db.VarChar(6)
+  createdAt DateTime @default(now())
+  topics    tblTopics[]
+
+  @@map("tblProjectSets")
 }
 
 model tblContent {

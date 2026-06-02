@@ -1,8 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import Crammy from '@/components/crammy'
-import { Share2 } from 'lucide-react'
+import { Share2, ArrowLeft, RefreshCw } from 'lucide-react'
 import { useToast } from '@/components/toast'
 import { generateShareCard } from '@/lib/share/card'
 
@@ -17,89 +16,233 @@ type Props = {
   aiFeedback: string | null
   onMoreTopics: () => void
   onCramAgain: () => void
+  onNextSet?: () => void
 }
 
 export default function CramCompletion({
   mastered, totalSet, totalAttempts, xpGained, leveledUp, absorption,
-  currentTopic, aiFeedback, onMoreTopics, onCramAgain,
+  currentTopic, aiFeedback, onMoreTopics, onCramAgain, onNextSet,
 }: Props) {
   const toast = useToast()
-  const router = useRouter()
+  const pct = Math.min(Math.max((absorption / 10) * 100, 0), 100)
+  const circumference = 2 * Math.PI * 54
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
-      <div className="glass rounded-2xl p-8 max-w-md w-full text-center border border-white/10 animate-scale-in">
-        <div className="mb-4 flex justify-center"><Crammy mood="celebrating" size={96} /></div>
-        <h2 className="text-2xl font-bold text-white mb-2">Set complete!</h2>
-        <p className="text-slate-400 text-sm mb-2">{currentTopic?.topictitle}</p>
-        <div className="space-y-2 my-6">
-          <p className="text-slate-400 text-sm">You learnt <span className="text-green-400 font-bold">{mastered}</span> phrases in <span className="text-blue-400 font-bold">{totalAttempts}</span> attempts.</p>
-          <p className="text-slate-400 text-sm">
-            Absorption: <span className={absorption > 7 ? 'text-green-400' : absorption > 4 ? 'text-yellow-400' : 'text-red-400'}>{absorption}</span> / 10
-          </p>
-          {xpGained > 0 && <p className="text-sm"><span className="text-yellow-400 font-bold">+{xpGained} XP</span></p>}
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#050810', padding: '24px' }}>
+      <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+
+        {/* Icon */}
+        <div style={{ position: 'relative', width: '140px', height: '140px' }}>
+          <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="8" />
+            <circle cx="70" cy="70" r="54" fill="none" stroke="url(#absGrad)" strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={`${circumference}`} strokeDashoffset={`${circumference - (pct / 100) * circumference}`}
+              style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.22,1,0.36,1)' }} />
+            <defs>
+              <linearGradient id="absGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#22c55e" />
+                <stop offset="100%" stopColor="#4ade80" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '32px', fontWeight: 800, color: 'white', lineHeight: 1 }}>{absorption}</span>
+            <span style={{ fontSize: '11px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.1em' }}>/ 10</span>
+          </div>
         </div>
+
+        {/* Stats */}
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: 'rgba(255,255,255,0.95)', marginBottom: '4px', letterSpacing: '-0.01em' }}>Set complete!</h2>
+          <p style={{ fontSize: '13px', color: 'rgba(148,163,184,0.4)', marginBottom: '20px' }}>{currentTopic?.topictitle}</p>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '24px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 700, color: 'rgba(34,197,94,0.9)' }}>{mastered}</div>
+              <div style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.06em', marginTop: '2px' }}>MASTERED</div>
+            </div>
+            <div style={{ width: '1px', background: 'rgba(255,255,255,0.06)' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 700, color: 'rgba(59,130,246,0.8)' }}>{totalAttempts}</div>
+              <div style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.06em', marginTop: '2px' }}>ATTEMPTS</div>
+            </div>
+            <div style={{ width: '1px', background: 'rgba(255,255,255,0.06)' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '24px', fontWeight: 700, color: 'rgba(250,204,21,0.8)' }}>+{xpGained}</div>
+              <div style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.06em', marginTop: '2px' }}>XP</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Level up */}
         {leveledUp && (
-          <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 px-4 py-2 rounded-xl mb-4 text-sm font-medium animate-scale-in flex items-center justify-between gap-2">
-            <span>Level up! 🎊</span>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(250,204,21,0.08), rgba(234,179,8,0.04))',
+            border: '1px solid rgba(250,204,21,0.12)',
+            borderRadius: '14px',
+            padding: '14px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+          }}>
+            <span style={{ fontSize: '13px', color: 'rgba(250,204,21,0.8)', fontWeight: 600 }}>Level up! 🎊</span>
             <button onClick={async () => {
               try {
                 const text = `I just leveled up on WordCrammer! 🎯 wordcrammer.app`
                 if (navigator.share) await navigator.share({ title: 'WordCrammer', text })
                 else await navigator.clipboard.writeText(text)
               } catch {}
-            }} className="text-[10px] text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-lg hover:bg-yellow-500/10">Share</button>
+            }} style={{ fontSize: '10px', color: 'rgba(250,204,21,0.6)', border: '1px solid rgba(250,204,21,0.15)', borderRadius: '8px', padding: '6px 12px', background: 'transparent', cursor: 'pointer' }}>
+              Share →
+            </button>
           </div>
         )}
+
+        {/* AI feedback */}
         {aiFeedback && (
-          <div className="glass rounded-xl p-4 mb-4 border border-blue-500/10 text-left animate-slide-up">
-            <p className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider mb-1">AI Tutor</p>
-            <p className="text-xs text-slate-300 leading-relaxed">{aiFeedback}</p>
+          <div style={{
+            background: 'rgba(59,130,246,0.04)',
+            border: '1px solid rgba(59,130,246,0.08)',
+            borderRadius: '14px',
+            padding: '16px',
+            width: '100%',
+          }}>
+            <div style={{ fontSize: '9px', color: 'rgba(59,130,246,0.4)', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '6px' }}>AI TUTOR</div>
+            <p style={{ fontSize: '12px', color: 'rgba(148,163,184,0.7)', lineHeight: 1.6 }}>{aiFeedback}</p>
           </div>
         )}
+
+        {/* Perfect set */}
         {mastered === totalSet && (
-          <div className="glass rounded-xl p-3 mb-4 border border-yellow-500/10 text-center animate-slide-up">
-            <p className="text-xs text-yellow-400 font-semibold">Perfect set! 🎯 All {totalSet} mastered.</p>
+          <div style={{
+            background: 'rgba(250,204,21,0.04)',
+            border: '1px solid rgba(250,204,21,0.08)',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            width: '100%',
+            textAlign: 'center',
+          }}>
+            <span style={{ fontSize: '12px', color: 'rgba(250,204,21,0.6)', fontWeight: 600 }}>Perfect set! 🎯 All {totalSet} mastered.</span>
           </div>
         )}
-        <div className="flex gap-3 justify-center">
-          <button onClick={onMoreTopics} className="btn-secondary px-5 py-2 text-sm">More Topics</button>
-          <button onClick={onCramAgain} className="btn-primary px-5 py-2 text-sm">Cram Again</button>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+          <button onClick={onMoreTopics} style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '14px',
+            borderRadius: '14px',
+            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.02)',
+            color: 'rgba(148,163,184,0.6)',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}>
+            <ArrowLeft style={{ width: '14px', height: '14px' }} />
+            More
+          </button>
+          {onNextSet && (
+            <button onClick={onNextSet} style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '14px',
+              borderRadius: '14px',
+              border: '1px solid rgba(59,130,246,0.15)',
+              background: 'rgba(59,130,246,0.06)',
+              color: 'rgba(96,165,250,0.8)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}>
+              Next Set →
+            </button>
+          )}
+          <button onClick={onCramAgain} style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '14px',
+            borderRadius: '14px',
+            border: 'none',
+            background: 'rgba(31,200,90,0.1)',
+            color: 'rgba(74,222,128,0.9)',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}>
+            <RefreshCw style={{ width: '14px', height: '14px' }} />
+            Again
+          </button>
         </div>
-        <div className="flex justify-center mt-4">
-          <button onClick={async () => {
-            try {
-              const svg = await generateShareCard({
-                username: 'Crammer', setTitle: currentTopic?.topictitle ?? 'Vocabulary',
-                mastered, total: totalSet, absorption,
+
+        {/* Share */}
+        <button onClick={async () => {
+          try {
+            const svg = await generateShareCard({
+              username: 'Crammer', setTitle: currentTopic?.topictitle ?? 'Vocabulary',
+              mastered, total: totalSet, absorption,
+            })
+            const blob = new Blob([svg], { type: 'image/svg+xml' })
+            if (navigator.share) {
+              await navigator.share({
+                title: 'WordCrammer',
+                text: `I just mastered ${mastered} phrases on WordCrammer!`,
+                files: [new File([blob], 'cram-result.svg', { type: 'image/svg+xml' })],
               })
-              const blob = new Blob([svg], { type: 'image/svg+xml' })
-              if (navigator.share) {
-                await navigator.share({
-                  title: 'WordCrammer',
-                  text: `I just mastered ${mastered} phrases on WordCrammer!`,
-                  files: [new File([blob], 'cram-result.svg', { type: 'image/svg+xml' })],
-                })
-              } else {
-                await navigator.clipboard.writeText(`I just mastered ${mastered}/${totalSet} phrases on WordCrammer! 🎯 wordcrammer.app`)
-                toast.show('xp', 'Share link copied!')
-              }
-            } catch (e) { console.error('[Failed to share result]', e) }
-          }} className="btn-secondary px-4 py-1.5 text-xs">
-            <Share2 className="w-3 h-3" /> Share
-          </button>
-        </div>
-        <div className="flex justify-center mt-3">
-          <button onClick={async () => {
-            try {
-              const text = `I just mastered ${mastered} phrases in ${totalAttempts} attempts on WordCrammer! Join me — we both get +50 XP 🎯 wordcrammer.app`
-              if (navigator.share) await navigator.share({ title: 'WordCrammer', text })
-              else await navigator.clipboard.writeText(text)
-            } catch {}
-          }} className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
-            📨 Invite a friend — you both get +50 XP
-          </button>
-        </div>
+            } else {
+              await navigator.clipboard.writeText(`I just mastered ${mastered}/${totalSet} phrases on WordCrammer! 🎯 wordcrammer.app`)
+              toast.show('xp', 'Share link copied!')
+            }
+          } catch {}
+        }} style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '8px 16px',
+          borderRadius: '10px',
+          border: '1px solid rgba(255,255,255,0.04)',
+          background: 'transparent',
+          color: 'rgba(148,163,184,0.25)',
+          fontSize: '11px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }}>
+          <Share2 style={{ width: '12px', height: '12px' }} />
+          Share result
+        </button>
+
+        {/* Invite */}
+        <button onClick={async () => {
+          try {
+            const text = `I just mastered ${mastered} phrases in ${totalAttempts} attempts on WordCrammer! Join me — we both get +50 XP 🎯 wordcrammer.app`
+            if (navigator.share) await navigator.share({ title: 'WordCrammer', text })
+            else await navigator.clipboard.writeText(text)
+          } catch {}
+        }} style={{
+          background: 'transparent',
+          border: 'none',
+          color: 'rgba(148,163,184,0.2)',
+          fontSize: '11px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }}>
+          📨 Invite a friend — you both get +50 XP
+        </button>
+
       </div>
     </div>
   )

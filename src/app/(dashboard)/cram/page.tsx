@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Volume2, Flag, Loader2 } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
 import { useToast } from '@/components/toast'
 import AccentDrawer from '@/components/accent-drawer'
@@ -12,7 +12,7 @@ import QuestionTimer from '@/components/question-timer'
 import CramCompletion from '@/components/cram-completion'
 import CramOnboarding from '@/components/cram-onboarding'
 import { useCramStore } from '@/store/cram-store'
-import { ProgressTrack } from '@/components/progress-track'
+import ProgressTrack from '@/components/progress-track'
 import { replaceAccentChars, getAccentTips } from '@/lib/accent-chars'
 import { playCorrectSound, playIncorrectSound, playCompletionSound, playTickSound, playTimeUpSound, playSparkle } from '@/lib/audio'
 import { hapticSuccess, hapticError } from '@/lib/haptic'
@@ -26,65 +26,97 @@ type CramItem = {
 
 type Topic = { topiccode: string; topictitle: string; voice: string; itemcount: number }
 
-const languageFlags: [string, string][] = [
-  ['FR', '🇫🇷'], ['GB', '🇬🇧'], ['ES', '🇪🇸'], ['NL', '🇳🇱'],
-  ['UK', '🇺🇦'], ['TR', '🇹🇷'], ['DE', '🇩🇪'], ['DK', '🇩🇰'],
-  ['SE', '🇸🇪'], ['NO', '🇳🇴'], ['IT', '🇮🇹'],
-]
-
 export default function CramPage() {
+  return <CramContent />
+}
+
+function CramContent() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
-  const { currentSet: storeSet, currentTopic: storeTopic, setSet, addError, clear } = useCramStore()
+  const { currentSet: storeSet, currentTopic: storeTopic } = useCramStore()
 
   const [currentSet, setCurrentSet] = useState<CramItem[]>(storeSet)
   const [currentTopic, setCurrentTopic] = useState<Topic | null>(storeTopic)
   const [currentItem, setCurrentItem] = useState<CramItem | null>(null)
-  const [revealAnswer, setRevealAnswer] = useState(false)
-  const [wordReported, setWordReported] = useState(false)
   const [ready, setReady] = useState(false)
   const [done, setDone] = useState(false)
   const [xpGained, setXpGained] = useState(0)
   const [leveledUp, setLeveledUp] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [showBriefing, setShowBriefing] = useState(true)
-  const [briefingCount, setBriefingCount] = useState(3)
   const [flash, setFlash] = useState<'correct' | 'incorrect' | null>(null)
   const [speaking, setSpeaking] = useState(false)
-  const [pronunciationScore, setPronunciationScore] = useState<{ score: number; words: Array<{ word: string; accuracyScore: number }> } | null>(null)
+  const [autoVoice, setAutoVoice] = useState(true)
   const [timerRunning, setTimerRunning] = useState(false)
   const [sparkles, setSparkles] = useState<Array<{ id: number; x: number; y: number }>>([])
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | null>(null)
   const [sessionErrors, setSessionErrors] = useState<Array<{ question: string; answer: string; topic_tag: string | null; grammar_tag: string | null }>>([])
   const [aiFeedback, setAiFeedback] = useState<string | null>(null)
-
-  const totalSize = currentSet.length
-  const mastered = currentSet.filter((i) => i.corrects >= 2 && !Number(i.reported)).length
-  const remaining = currentSet.filter((i) => i.corrects < 2 && !Number(i.reported)).length
+  const [sessionAnswers, setSessionAnswers] = useState<Record<string, { correctCount: number; wrongCount: number }>>({})
+  const [wrongAnswer, setWrongAnswer] = useState<string | null>(null)
+  const sessionAnswersRef = useRef(sessionAnswers)
 
   useEffect(() => {
-    if (storeSet.length === 0 && storeTopic === null) { router.push('/sets'); return }
-    setCurrentSet(storeSet)
-    setCurrentTopic(storeTopic)
-    setReady(true)
-    if (!sessionStorage.getItem('wc_cram_onboarded')) setShowOnboarding(true)
-  }, [router, storeSet, storeTopic])
+    sessionAnswersRef.current = sessionAnswers
+  }, [sessionAnswers])
+
+  const totalSize = currentSet.length
+  const mastered = Object.values(sessionAnswers).filter((a) => a.correctCount >= 2).length
+  const remaining = currentSet.filter((i) => {
+    const sa = sessionAnswers[i.id]
+    return !sa || sa.correctCount < 2
+  }).length
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const urlTopic = params.get('topic')
+    const urlTitle = params.get('title') ?? ''
+
+    if (urlTopic) {
+      console.log('[cram] fetching set for', urlTopic)
+      const controller = new AbortController()
+      const t = setTimeout(() => { controller.abort() }, 15000)
+      fetch(`/api/progress?action=generateset&topiccode=${encodeURIComponent(urlTopic)}&size=40`, { cache: 'no-store', signal: controller.signal })
+        .then((r) => { if (!r.ok) throw new Error('status ' + r.status); return r.json() })
+        .then((data) => {
+          clearTimeout(t)
+          if (data.allDone) { window.location.href = '/dashboard'; return }
+          const topic: Topic = { topiccode: urlTopic, topictitle: urlTitle, voice: '', itemcount: data.items?.length ?? 0 }
+          setCurrentSet(data.items)
+          setCurrentTopic(topic)
+          setReady(true)
+          if (!sessionStorage.getItem('wc_cram_onboarded')) setShowOnboarding(true)
+        })
+        .catch(() => { window.location.href = '/dashboard' })
+      return
+    }
+
+    const cachedItems = sessionStorage.getItem('wc_cram_set')
+    const cachedTopic = sessionStorage.getItem('wc_cram_topic')
+    if (cachedItems && cachedTopic) {
+      try {
+        const items = JSON.parse(cachedItems)
+        const topic = JSON.parse(cachedTopic)
+        if (Array.isArray(items) && items.length > 0) {
+          setCurrentSet(items)
+          setCurrentTopic(topic)
+          setReady(true)
+          if (!sessionStorage.getItem('wc_cram_onboarded')) setShowOnboarding(true)
+          return
+        }
+      } catch {}
+    }
+    setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+    return
+  }, [])
 
   useEffect(() => {
     if (ready && currentSet.length > 0) setCurrentItem(currentSet[0])
   }, [ready, currentSet])
 
   useEffect(() => {
-    if (ready && !showOnboarding && !showBriefing) inputRef.current?.focus()
-  }, [ready, showOnboarding, showBriefing, currentItem])
-
-  useEffect(() => {
-    if (!showBriefing && !showOnboarding) {
-      const t = setTimeout(() => setShowBriefing(false), 0)
-      return () => clearTimeout(t)
-    }
-  }, [showBriefing, showOnboarding])
+    if (ready && !showOnboarding) inputRef.current?.focus()
+  }, [ready, showOnboarding, currentItem])
 
   useEffect(() => {
     if (done) {
@@ -92,16 +124,22 @@ export default function CramPage() {
     }
   }, [done])
 
-  const speakText = useCallback((text: string, lang = 'en-GB', rate = 1) => {
+  const speakText = useCallback((text: string, lang?: string) => {
     if (!text || typeof window === 'undefined') return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    const voices = window.speechSynthesis.getVoices()
-    const voice = voices.find((v) => v.lang === lang)
-    if (voice) utterance.voice = voice
-    utterance.rate = rate
-    window.speechSynthesis.speak(utterance)
-  }, [])
+    const voice = lang ?? currentTopic?.voice ?? 'es-ES'
+    fetch('/api/audio/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, language: voice }),
+    })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data?.audio) return
+        const audio = new Audio(`data:audio/mpeg;base64,${data.audio}`)
+        audio.play().catch(() => {})
+      })
+      .catch(() => {})
+  }, [currentTopic])
 
   const saveProgress = useCallback(async (question: string, correct: boolean) => {
     if (!currentTopic) return
@@ -112,7 +150,11 @@ export default function CramPage() {
   }, [currentTopic])
 
   const proposeNext = useCallback(() => {
-    const itemsLeft = currentSet.filter((i) => i.corrects < 2 && !Number(i.reported))
+    const ans = sessionAnswersRef.current
+    const itemsLeft = currentSet.filter((i) => {
+    const sa = ans[i.id]
+    return !sa || sa.correctCount < 2
+  })
     if (itemsLeft.length === 0) { setDone(true); return }
 
     const candidates = itemsLeft.filter((i) => i.question !== currentItem?.question)
@@ -121,8 +163,6 @@ export default function CramPage() {
 
     if (item) {
       setCurrentItem(item)
-      setRevealAnswer(false)
-      setWordReported(Number(item.reported) === 1)
       setFlash(null)
       setTimerRunning(true)
     }
@@ -130,33 +170,36 @@ export default function CramPage() {
 
   const handleAnswer = useCallback((correct: boolean) => {
     if (!currentItem) return
+    console.log('[handleAnswer]', currentItem.id, currentItem.question, 'correct:', correct, 'sessionAnswers keys:', Object.keys(sessionAnswers))
     setTimerRunning(false)
+    const question = currentItem.question
 
-    setCurrentSet((prev) => prev.map((item) => {
-      if (item.question === currentItem.question) {
-        return { ...item, attempts: item.attempts + 1, corrects: correct ? item.corrects + 1 : Math.max(0, item.corrects - 1) }
-      }
-      return item
-    }))
-
-    saveProgress(currentItem.question, correct)
+    saveProgress(question, correct)
 
     if (correct) {
       playCorrectSound()
       hapticSuccess()
-      speakText(currentItem.answer, currentTopic?.voice ?? 'en-GB')
+      if (autoVoice) speakText(currentItem.answer)
       setFlash('correct')
       playSparkle()
       const id = Date.now()
       setSparkles((prev) => [...prev, { id, x: Math.random() * 60 + 20, y: Math.random() * 30 + 30 }])
       setTimeout(() => setSparkles((prev) => prev.filter((s) => s.id !== id)), 800)
+      setSessionAnswers((prev) => {
+        const existing = prev[currentItem.id] ?? { correctCount: 0, wrongCount: 0 }
+        return { ...prev, [currentItem.id]: { correctCount: existing.correctCount + 1, wrongCount: existing.wrongCount } }
+      })
+      setTimeout(() => setFlash(null), 600)
       setTimeout(() => proposeNext(), 400)
     } else {
       playIncorrectSound()
       hapticError()
       setFlash('incorrect')
-      setRevealAnswer(true)
-      // Track error for AI feedback
+      setWrongAnswer(currentItem.answer)
+      setSessionAnswers((prev) => {
+        const existing = prev[currentItem.id] ?? { correctCount: 0, wrongCount: 0 }
+        return { ...prev, [currentItem.id]: { correctCount: existing.correctCount, wrongCount: existing.wrongCount + 1 } }
+      })
       if (currentItem.question) {
         setSessionErrors((prev) => {
           if (prev.length >= 10) return prev
@@ -182,8 +225,7 @@ export default function CramPage() {
       const value = target.value.trim()
       if (!value) return
       target.value = ''
-      if (!revealAnswer) handleAnswer(false)
-      else proposeNext()
+      handleAnswer(false)
     }
   }
 
@@ -210,11 +252,11 @@ export default function CramPage() {
       if (data.leveledUp) { setLeveledUp(true); toast.show('levelup', `Level ${data.level}! 🎊`); confetti({ particleCount: 80, spread: 80, origin: { y: 0.5 }, colors: ['#a78bfa', '#60a5fa', '#eab308'] }) }
     } catch (e) { console.error('[Failed to award XP]', e) }
     try {
-      const totalAttempts = currentSet.reduce((p, i) => p + Number(i.attempts), 0)
+      const totalAttempts = Object.values(sessionAnswers).reduce((p, a) => p + a.correctCount + a.wrongCount, 0)
       await fetch('/api/progress/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topiccode: currentTopic?.topiccode, topictitle: currentTopic?.topictitle, score: mastered, totalItems: currentSet.length, xpEarned: earnedXp, attempts: totalAttempts }) })
     } catch (e) { console.error('[Failed to save session]', e) }
     // Check if first completed set — award referral XP if referred
-    if (mastered > 0 && currentSet.filter((i) => Number(i.corrects) >= 2).length > 0) {
+    if (mastered > 0) {
       try {
         await fetch('/api/referral/reward', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       } catch {}
@@ -236,15 +278,14 @@ export default function CramPage() {
         if (fbData.text) setAiFeedback(fbData.text)
       } catch (e) { console.error('[Failed to get AI feedback]', e) }
     }
-  }, [currentSet, mastered, remaining, toast, currentTopic, sessionErrors])
+  }, [currentSet, mastered, remaining, toast, currentTopic, sessionErrors, sessionAnswers])
 
-  const proposeNextWrapper = useCallback(() => {
+  const proposeNextWrapper = useCallback(async () => {
     if (remaining <= 0) {
       playCompletionSound()
-      // Track completed set count for rate prompt
       const current = Number(sessionStorage.getItem('wc_completed_sets') ?? '0')
       sessionStorage.setItem('wc_completed_sets', String(current + 1))
-      awardSessionXp()
+      await awardSessionXp()
       setDone(true)
       return
     }
@@ -253,13 +294,7 @@ export default function CramPage() {
 
   const handleReport = async () => {
     if (!currentItem || !currentTopic) return
-    try { await fetch('/api/content', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'report', topiccode: currentTopic.topiccode, question: currentItem.question }) }); setWordReported(true) } catch (e) { console.error('[Failed to report content]', e) }
-  }
-
-  const getFlag = (voice: string): string => {
-    const country = voice.split('-')[1] ?? ''
-    const combo = languageFlags.find((f) => f[0] === country)
-    return combo ? combo[1] : ''
+    try { await fetch('/api/content', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'report', topiccode: currentTopic.topiccode, question: currentItem.question }) }) } catch {}
   }
 
   const dismissOnboarding = () => { sessionStorage.setItem('wc_cram_onboarded', '1'); setShowOnboarding(false) }
@@ -288,10 +323,14 @@ export default function CramPage() {
   if (!currentTopic) return <div className="flex items-center justify-center min-h-[60vh]"><p className="text-slate-400">Select a topic from the topics page.</p></div>
 
   if (done) {
-    const totalAttempts = currentSet.reduce((p, i) => p + Number(i.attempts), 0)
+    const totalAttempts = Object.values(sessionAnswers).reduce((p, a) => p + a.correctCount + a.wrongCount, 0)
     let absorption = 13 - (3 * totalAttempts) / Math.max(mastered, 1)
     if (isNaN(absorption)) absorption = 0
     absorption = Math.round(absorption * 10) / 10 + 1
+
+    const nextCode = currentTopic?.topiccode
+      ? currentTopic.topiccode.slice(0, 2) + String(parseInt(currentTopic.topiccode.slice(2)) + 1).padStart(3, '0')
+      : null
 
     return (
       <CramCompletion
@@ -305,11 +344,11 @@ export default function CramPage() {
         aiFeedback={aiFeedback}
         onMoreTopics={() => router.push('/sets')}
         onCramAgain={() => router.push('/cram')}
+        onNextSet={nextCode ? () => router.push(`/cram?topic=${nextCode}&title=Set ${nextCode}`) : undefined}
       />
     )
   }
 
-  const flag = getFlag(currentTopic.voice ?? '')
   const answer = currentItem?.answer ?? ''
   const accentTips = answer ? getAccentTips(answer) : []
 
@@ -319,133 +358,244 @@ export default function CramPage() {
         <CramOnboarding onDismiss={dismissOnboarding} />
       )}
 
-      <div className="min-h-[80vh] flex flex-col items-center justify-start sm:justify-center px-3 sm:px-4 py-4 sm:py-8">
-        <div className="w-full max-w-xl">
-          <div className="text-center mb-3 sm:mb-4">
-            <h2 className="text-sm sm:text-base font-semibold text-white">{currentTopic.topictitle}</h2>
-            <div className="flex items-center justify-center gap-2 mt-0.5">
-              <span className="text-[10px] sm:text-xs text-slate-500">
-                {currentTopic.topiccode} · {currentItem?.topic_tag && <span className="text-blue-400">{currentItem.topic_tag}</span>}
-                {currentItem?.grammar_tag && <span className="text-slate-600"> · {currentItem.grammar_tag}</span>}
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: '#050810', overflow: 'hidden' }}>
+        {/* Top bar */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 12px', gap: '12px' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '11px', color: 'rgba(148,163,184,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '2px' }}>{currentTopic.topiccode}</div>
+            <div style={{ fontSize: '15px', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{currentTopic.topictitle}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'rgba(34,197,94,0.9)' }}>{mastered}</span>
+            <span style={{ fontSize: '11px', color: 'rgba(148,163,184,0.3)' }}>/</span>
+            <span style={{ fontSize: '13px', color: 'rgba(148,163,184,0.5)' }}>{totalSize}</span>
+          </div>
+        </div>
+
+        {/* XP bar */}
+        <div style={{ padding: '0 20px 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <span style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.04em' }}>MASTERED</span>
+            <span style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', letterSpacing: '0.04em' }}>{remaining} LEFT</span>
+          </div>
+          <div style={{ height: '3px', borderRadius: '99px', background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${(mastered / totalSize) * 100}%`,
+              background: 'linear-gradient(90deg, #22c55e, #4ade80)',
+              borderRadius: '99px',
+              transition: 'width 0.5s cubic-bezier(0.22,1,0.36,1)',
+              boxShadow: '0 0 8px rgba(34,197,94,0.3)',
+            }} />
+          </div>
+        </div>
+
+        {/* Progress circles */}
+        <div style={{ padding: '0 20px 16px', display: 'flex', justifyContent: 'center' }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)',
+            borderRadius: '14px',
+            padding: '12px 16px',
+          }}>
+            <ProgressTrack items={currentSet} currentQuestion={currentItem?.question} sessionAnswers={sessionAnswers} />
+          </div>
+          {saveStatus && (
+            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+              <span style={{ fontSize: '9px', transition: 'all 0.3s', color: saveStatus === 'saving' ? 'rgba(148,163,184,0.3)' : 'rgba(34,197,94,0.6)' }}>
+                {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
               </span>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                parseInt(currentTopic.topiccode.slice(3)) <= 10
-                  ? 'text-green-400 bg-green-500/10'
-                  : parseInt(currentTopic.topiccode.slice(3)) <= 20
-                    ? 'text-blue-400 bg-blue-500/10'
-                    : 'text-purple-400 bg-purple-500/10'
-              }`}>
-                {parseInt(currentTopic.topiccode.slice(3)) <= 10 ? 'Essential' : parseInt(currentTopic.topiccode.slice(3)) <= 20 ? 'Important' : 'Advanced'}
-              </span>
             </div>
-            {/* Mini journey progress */}
-            <div className="flex items-center justify-center gap-3 mt-2 text-[9px] text-slate-600">
-              <span>{mastered}/{totalSize} mastered</span>
-              <span className="w-1 h-1 rounded-full bg-slate-600" />
-              <span>{remaining} remaining</span>
-            </div>
-            <div className="w-full max-w-xs mx-auto bg-white/5 rounded-full h-1 mt-1.5 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-300"
-                style={{ width: `${(mastered / totalSize) * 100}%` }} />
-            </div>
-          </div>
+          )}
+        </div>
 
-          <div className="glass rounded-xl p-3 sm:p-4 border border-white/5 mb-4 sm:mb-6">
-            <ProgressTrack items={currentSet} currentQuestion={currentItem?.question} />
-            {saveStatus && (
-              <div className="text-center mt-1">
-                <span className={`text-[9px] transition-all ${saveStatus === 'saving' ? 'text-slate-500' : 'text-green-400'}`}>
-                  {saveStatus === 'saving' ? 'Saving...' : 'Saved ✓'}
-                </span>
+        {/* Sparkle particles */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+          {sparkles.map((s) => (
+            <motion.div key={s.id} initial={{ opacity: 1, scale: 1 }} animate={{ opacity: 0, scale: 0, x: (s.x - 50) * 3, y: -100 }} transition={{ duration: 0.8, ease: 'easeOut' }}
+              style={{ position: 'absolute', width: '6px', height: '6px', borderRadius: '50%', background: '#fbbf24', boxShadow: '0 0 6px rgba(250,204,21,0.5)', left: `${s.x}%`, top: `${s.y}%` }} />
+          ))}
+        </div>
+
+        {/* Flash feedback — always reserved 30px so content doesn't shift */}
+        <div style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+          {flash && (
+            <div style={{
+              textAlign: 'center',
+              fontSize: '14px',
+              fontWeight: 700,
+              color: flash === 'correct' ? '#22c55e' : '#ef4444',
+              letterSpacing: '0.05em',
+              animation: 'fadeInUp 0.2s ease',
+            }}>
+              {flash === 'correct' ? 'CORRECT!' : 'WRONG'}
+            </div>
+          )}
+        </div>
+
+        {/* Main card */}
+        {!speaking && currentItem && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 20px', overflow: 'auto' }}>
+            {/* Question card */}
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              borderRadius: '20px',
+              padding: '28px 24px',
+              marginBottom: '12px',
+            }}>
+              {/* Language direction */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
+                <span style={{ fontSize: '18px' }}>🇬🇧</span>
+                <span style={{ fontSize: '10px', color: 'rgba(148,163,184,0.25)', letterSpacing: '0.1em' }}>ENGLISH</span>
+                <span style={{ width: '24px', height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                <span style={{ fontSize: '18px' }}>🇪🇸</span>
+                <span style={{ fontSize: '10px', color: 'rgba(148,163,184,0.25)', letterSpacing: '0.1em' }}>SPANISH</span>
               </div>
-            )}
-          </div>
 
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {sparkles.map((s) => (
-              <motion.div key={s.id} initial={{ opacity: 1, scale: 1 }} animate={{ opacity: 0, scale: 0, x: (s.x - 50) * 3, y: -100 }} transition={{ duration: 0.8, ease: 'easeOut' }}
-                className="absolute w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.6)]" style={{ left: `${s.x}%`, top: `${s.y}%` }} />
-            ))}
-          </div>
-
-          {flash && <div role="alert" className={`text-center text-sm font-semibold mb-2 animate-scale-in ${flash === 'correct' ? 'text-green-400' : 'text-red-400'}`}>{flash === 'correct' ? 'Correct!' : 'Incorrect'}</div>}
-
-          {!speaking && currentItem && (
-            <>
-              <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/10 mb-3">
-                <div className="flex items-center justify-center gap-2 mb-3">
-                  <button onClick={() => speakText(currentItem.question, 'en-GB')} className="hidden sm:inline-flex p-1.5 rounded-lg text-blue-400 hover:text-blue-300" aria-label="Hear the word">
-                    <Volume2 className="w-4 h-4" />
-                  </button>
-                  <span className="text-xl sm:text-2xl md:text-3xl font-bold italic text-white/90 text-center">&ldquo;{currentItem.question}&rdquo;</span>
-                </div>
-
-                <div className="flex items-center justify-center gap-2 mb-3 sm:hidden">
-                  <button onClick={() => speakText(currentItem.question, 'en-GB')} className="p-1.5 rounded-lg text-blue-400" aria-label="Hear the word"><Volume2 className="w-4 h-4" /></button>
-                  <span className="text-xs text-slate-500">{flag}</span>
-                </div>
-
-                <input ref={inputRef} type="text" autoComplete="off" onChange={handleInputChange} onKeyUp={handleKeyUp}
-                  className="w-full bg-transparent text-white text-center text-xl sm:text-2xl font-medium placeholder-slate-600 focus:outline-none border-b-2 border-white/10 focus:border-brand/50 pb-2 transition-colors"
-                  placeholder="Type the translation..." />
-
-                <div className="flex items-center justify-center mt-3 gap-2">
-                  <QuestionTimer running={timerRunning} onTimeout={() => { setTimerRunning(false); playTimeUpSound(); if (!revealAnswer && currentItem) handleAnswer(false) }} onTick={(r) => { if (r <= 3 && r > 0) playTickSound() }} />
-                  <span className="text-[10px] text-slate-600">seconds</span>
+              {/* Question text */}
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ fontSize: '10px', color: 'rgba(148,163,184,0.3)', marginBottom: '12px', letterSpacing: '0.06em' }}>TRANSLATE THIS</div>
+                <div style={{ fontSize: 'clamp(24px, 6vw, 32px)', fontWeight: 700, color: 'rgba(255,255,255,0.95)', fontStyle: 'italic', lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+                  &ldquo;{currentItem.question}&rdquo;
                 </div>
               </div>
 
-              {revealAnswer && (
-                <div className="glass rounded-xl p-4 border border-white/10 text-center animate-scale-in mb-3">
-                  <div className="text-lg sm:text-xl font-bold text-white mb-1">{flag} {answer}</div>
-                  {accentTips.length > 0 && <p className="text-[10px] sm:text-xs text-slate-500">Tip: {accentTips.join(', ')}</p>}
-                </div>
-              )}
+              {/* Timer */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                <QuestionTimer
+                  running={timerRunning}
+                  onTimeout={() => { setTimerRunning(false); playTimeUpSound(); handleAnswer(false) }}
+                  onTick={(r) => { if (r <= 3 && r > 0) playTickSound() }}
+                />
+              </div>
 
-              {pronunciationScore && (
-                <div className="glass rounded-xl p-3 mb-3 border border-yellow-500/10 animate-slide-up">
-                  <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                    <span>Pronunciation</span>
-                    <span className={pronunciationScore.score >= 70 ? 'text-green-400' : pronunciationScore.score >= 40 ? 'text-yellow-400' : 'text-red-400'}>{pronunciationScore.score}%</span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1">
-                    {pronunciationScore.words.map((w, i) => (
-                      <span key={i} className="text-xs flex items-center gap-1">
-                        <span className="text-white">{w.word}</span>
-                        <span className={w.accuracyScore >= 70 ? 'text-green-400' : w.accuracyScore >= 40 ? 'text-yellow-400' : 'text-red-400'}>{w.accuracyScore}%</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Input */}
+              <input
+                ref={inputRef}
+                type="text"
+                autoComplete="off"
+                onChange={handleInputChange}
+                onKeyUp={handleKeyUp}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: '2px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.9)',
+                  fontSize: '20px',
+                  fontWeight: 500,
+                  textAlign: 'center',
+                  padding: '12px 0',
+                  outline: 'none',
+                  transition: 'border-color 0.2s ease',
+                  fontFamily: 'inherit',
+                }}
+                placeholder="Type the translation..."
+              />
 
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+              {/* Action buttons row */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   <AccentDrawer onInsert={(char) => { const i = inputRef.current; if (i) { const s = i.selectionStart ?? i.value.length; i.value = i.value.slice(0, s) + char + i.value.slice(s); i.focus() } }} inputRef={inputRef} />
                   <VoiceInput language={currentTopic?.voice ?? 'es-ES'} referenceText={answer}
                     onResult={(t) => { const i = inputRef.current; if (i) { i.value = t; if (t.trim().toLowerCase() === answer.toLowerCase()) { i.value = ''; handleAnswer(true) } else handleAnswer(false) } }} />
                 </div>
-                <button onClick={handleReport} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-medium min-h-[36px] transition-all ${wordReported ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
-                  <Flag className="w-3 h-3" />{wordReported ? 'Reported' : 'Report'}
+                <button
+                  onClick={() => { setAutoVoice((v) => !v) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', background: autoVoice ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)', border: `1px solid ${autoVoice ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.08)'}`, color: autoVoice ? 'rgba(34,197,94,0.8)' : 'rgba(148,163,184,0.3)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s ease' }}
+                >
+                  <Volume2 style={{ width: '14px', height: '14px' }} />
+                  {autoVoice ? 'Auto On' : 'Auto Off'}
                 </button>
               </div>
-            </>
-          )}
-
-          {speaking && (
-            <div className="glass rounded-xl p-6 border border-white/10 text-center animate-slide-up">
-              <div className="animate-pulse text-3xl mb-4">{flag || '🔊'}</div>
-              <p className="text-slate-400 text-xs sm:text-sm mb-4">Listening mode active...</p>
-              <button onClick={() => { setSpeaking(false); window.speechSynthesis.cancel() }} className="btn-danger px-5 py-2.5 text-xs sm:text-sm min-h-[44px]">Stop</button>
             </div>
-          )}
 
-          <div className="flex justify-center mt-3">
-            <button onClick={startListeningMode} className="text-xs text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1">
-              <Volume2 className="w-3 h-3" /> Listen to full set
+            {/* Wrong answer modal */}
+            {wrongAnswer && (
+              <div style={{
+                position: 'fixed', inset: 0, zIndex: 100,
+                background: 'rgba(5,10,20,0.85)', backdropFilter: 'blur(8px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+              }}>
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(15,23,42,0.9))',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: '20px',
+                  padding: '32px 28px',
+                  maxWidth: '400px', width: '100%',
+                  textAlign: 'center',
+                  boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+                  animation: 'slideUp 0.2s ease',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(239,68,68,0.6)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+                    Correct translation
+                  </div>
+                  <div style={{ fontSize: '14px', color: 'rgba(148,163,184,0.7)', marginBottom: '16px' }}>
+                    of <em style={{ color: 'rgba(255,255,255,0.85)', fontStyle: 'normal', fontWeight: 600 }}>{currentItem?.question}</em>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: 700, color: '#ffffff', marginBottom: '8px', letterSpacing: '-0.02em' }}>
+                    {wrongAnswer}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(148,163,184,0.3)', marginBottom: '28px' }}>
+                    Take your time to memorize
+                  </div>
+                  <button
+                    onClick={() => { setWrongAnswer(null); proposeNext() }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setWrongAnswer(null); proposeNext() } }}
+                    autoFocus
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s ease' }}
+                  >
+                    Got it — next word
+                  </button>
+                  <div style={{ fontSize: '10px', color: 'rgba(148,163,184,0.2)', marginTop: '12px' }}>
+                    or press Enter
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingBottom: '20px' }}>
+              <button
+                onClick={handleReport}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 12px', borderRadius: '8px', background: 'transparent', border: 'none', color: 'rgba(148,163,184,0.25)', fontSize: '11px', cursor: 'pointer', transition: 'all 0.15s' }}
+              >
+                <Flag style={{ width: '12px', height: '12px' }} />
+                Report
+              </button>
+              <button
+                onClick={startListeningMode}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', background: 'transparent', border: 'none', color: 'rgba(148,163,184,0.25)', fontSize: '11px', cursor: 'pointer', transition: 'all 0.15s' }}
+              >
+                <Volume2 style={{ width: '12px', height: '12px' }} />
+                Listen to all
+              </button>
+              <button
+                onClick={() => { setSessionAnswers({}); setCurrentItem(currentSet[0]); setFlash(null); setWrongAnswer(null); setTimerRunning(true) }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', background: 'transparent', border: 'none', color: 'rgba(239,68,68,0.3)', fontSize: '11px', cursor: 'pointer', transition: 'all 0.15s' }}
+              >
+                Start over
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Listening mode */}
+        {speaking && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(59,130,246,0.1)', border: '2px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', animation: 'pulse 2s ease-in-out infinite' }}>
+              <Volume2 style={{ width: '32px', height: '32px', color: 'rgba(59,130,246,0.6)' }} />
+            </div>
+            <p style={{ fontSize: '14px', color: 'rgba(148,163,184,0.4)', marginBottom: '24px' }}>Listening mode active...</p>
+            <button
+              onClick={() => { setSpeaking(false); window.speechSynthesis.cancel() }}
+              style={{ padding: '12px 32px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: 'rgba(239,68,68,0.7)', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Stop
             </button>
           </div>
-        </div>
+        )}
       </div>
     </>
   )

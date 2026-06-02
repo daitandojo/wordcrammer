@@ -72,9 +72,10 @@ export async function generateSmartSet(
   topiccode: string,
   setSize = 40
 ) {
-  const items = await prisma.tblContent.findMany({
-    where: { topiccode, reported: { not: '1' } },
+  const allContent = await prisma.tblContent.findMany({
+    where: { topiccode },
   })
+  const items = allContent.filter((item) => item.reported !== '1')
   const progress = await prisma.tblProgress.findMany({
     where: { username, topiccode },
   })
@@ -167,7 +168,14 @@ export async function generateSmartSet(
   const result = shuffled.map((item) => {
     const prog = progressMap.get(item.question)
     return {
-      ...item,
+      id: item.id,
+      topiccode: item.topiccode,
+      question: item.answer,
+      answer: item.question,
+      questiontype: item.questiontype,
+      reported: item.reported,
+      topic_tag: item.topic_tag,
+      grammar_tag: item.grammar_tag,
       attempts: Number(prog?.attempts ?? 0),
       corrects: Number(prog?.corrects ?? 0),
     }
@@ -189,7 +197,7 @@ export async function generateFilteredSet(
   },
   setSize = 40
 ) {
-  const where: Record<string, unknown> = { reported: { not: '1' } }
+  const where: Record<string, unknown> = {}
 
   if (filters.topic_tags?.length) {
     where.topic_tag = { in: filters.topic_tags }
@@ -198,7 +206,7 @@ export async function generateFilteredSet(
     where.grammar_tag = { in: filters.grammar_tags }
   }
 
-  let allItems = await prisma.tblContent.findMany({ where })
+  let allItems = (await prisma.tblContent.findMany({ where })).filter((item) => item.reported !== '1')
 
   if (filters.set_range) {
     const codes: string[] = []
@@ -269,7 +277,14 @@ export async function generateFilteredSet(
     items: selected.map((item) => {
       const prog = progressMap.get(item.question)
       return {
-        ...item,
+        id: item.id,
+        topiccode: item.topiccode,
+        question: item.answer,
+        answer: item.question,
+        questiontype: item.questiontype,
+        reported: item.reported,
+        topic_tag: item.topic_tag,
+        grammar_tag: item.grammar_tag,
         attempts: Number(prog?.attempts ?? 0),
         corrects: Number(prog?.corrects ?? 0),
       }

@@ -78,13 +78,13 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden bg-mesh">
+    <div className="min-h-dvh flex flex-col items-center px-4 sm:px-6 py-10 relative overflow-hidden bg-mesh">
       <div className="deco-blob deco-blob-1 animate-float" style={{ top: '10%', left: '-5%' }} />
       <div className="deco-blob deco-blob-2 animate-float-delayed" style={{ top: '60%', right: '-10%' }} />
 
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-lg flex-1 flex flex-col">
         {/* Steps indicator */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        <div className="flex items-center justify-center gap-2 mt-6 mb-8">
           {[0, 1, 2].map((s) => (
             <div key={s} className={`h-1 rounded-full transition-all duration-300 ${s <= step ? 'w-8 bg-blue-500' : 'w-4 bg-white/10'}`} />
           ))}
@@ -97,9 +97,9 @@ export default function OnboardingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="text-center"
+              className="text-center flex flex-col flex-1"
             >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 text-blue-400 mb-4">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 text-blue-400 mb-4 mt-8">
                 <Globe className="w-7 h-7" />
               </div>
               <h1 className="text-2xl font-bold text-white mb-1">What language?</h1>
@@ -134,9 +134,9 @@ export default function OnboardingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="text-center"
+              className="text-center flex flex-col flex-1"
             >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 mb-4">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 mb-4 mt-8">
                 <Target className="w-7 h-7" />
               </div>
               <h1 className="text-2xl font-bold text-white mb-1">What&apos;s your goal?</h1>
@@ -185,9 +185,9 @@ export default function OnboardingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="text-center"
+              className="text-center flex flex-col flex-1"
             >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-bold text-xl mb-4 shadow-lg">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-bold text-xl mb-4 mt-8 shadow-lg">
                 W
               </div>
               <h1 className="text-2xl font-bold text-white mb-2">You&apos;re all set!</h1>

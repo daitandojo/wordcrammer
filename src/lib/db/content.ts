@@ -55,3 +55,13 @@ export async function saveFullSet(
     })),
   })
 }
+
+export async function bulkSetContent(topiccode: string, items: Array<{ topiccode: string; questiontype: string; question: string; answer: string }>) {
+  await prisma.tblContent.deleteMany({ where: { topiccode } })
+  if (items.length === 0) return
+  await prisma.tblContent.createMany({ data: items })
+}
+
+export async function updateContentItem(id: number, data: { question?: string; answer?: string }) {
+  return prisma.tblContent.update({ where: { id }, data })
+}

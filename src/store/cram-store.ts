@@ -25,8 +25,20 @@ export const useCramStore = create<CramStore>()(
       currentSet: [],
       currentTopic: null,
       sessionErrors: [],
-      setSet: (items, topic) => set({ currentSet: items, currentTopic: topic, sessionErrors: [] }),
-      clear: () => set({ currentSet: [], currentTopic: null, sessionErrors: [] }),
+      setSet: (items, topic) => {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('wc_cram_set', JSON.stringify(items))
+          sessionStorage.setItem('wc_cram_topic', JSON.stringify(topic))
+        }
+        set({ currentSet: items, currentTopic: topic, sessionErrors: [] })
+      },
+      clear: () => {
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('wc_cram_set')
+          sessionStorage.removeItem('wc_cram_topic')
+        }
+        set({ currentSet: [], currentTopic: null, sessionErrors: [] })
+      },
       addError: (err) => set((s) => ({ sessionErrors: [...s.sessionErrors, err].slice(0, 10) })),
     }),
     { name: 'wc-cram-storage' }
